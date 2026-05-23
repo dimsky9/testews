@@ -1,5 +1,10 @@
-# EEWS V3
-# SEMUA CODE MILIK ALLAH SWT
+#hwehashdasdadad
+"""
+Earthquake Early Warning System (EWS) V4
+====================================================
+SEMUA CODE MILIK ALLAH SWT
+"""
+
 import asyncio, json, threading, time, collections, math, os
 import numpy as np
 from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
@@ -8,89 +13,139 @@ from obspy.taup import TauPyModel
 
 import websockets
 
+
+try:
+    from quakemigrate.core.lib import recursive_sta_lta as _qm_stalta
+    _QM_AVAILABLE = True
+    print("[ONSET] QuakeMigrate C library loaded")
+except ImportError:
+    _QM_AVAILABLE = False
+    print("[ONSET] QuakeMigrate tidak ditemukan, pakai obspy classic_sta_lta")
+
 print("Loading TauP model...")
 TAUP_MODEL = TauPyModel(model="iasp91")
 print("TauP OK")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# KONFIGURASI STASIUN
+# ═══════════════════════════════════════════════════════════════════════════════
+
 STATIONS = [
-    # Jawa — THRESHOLD DITURUNKAN agar lebih peka mendeteksi gempa lokal
-    {"net":"GE","sta":"BBJI", "cha":"BHZ","lat":-7.46,"lon":107.65,"label":"Garut",
-     "thr_on":3.2,"thr_off":0.5},
-    {"net":"GE","sta":"UGM",  "cha":"SHZ","lat":-7.91,"lon":110.52,"label":"WanaGAMA",
-     "thr_on":4.5,"thr_off":0.6},   
-    {"net":"GE","sta":"JAGI", "cha":"BHZ","lat":-8.47,"lon":114.15,"label":"Banyuwangi",
-     "thr_on":4.8,"thr_off":0.5},
-    {"net":"GE","sta":"SMRI", "cha":"BHZ","lat":-7.050,"lon":110.440,"label":"Semarang",
-     "thr_on":7.5,"thr_off":0.9},
+  
+    {"net":"GE","sta":"BBJI","cha":"BHZ","lat":-7.46, "lon":107.65,"label":"Garut",
+     "thr_on":3.2,"thr_off":0.5,"thr_single":100.0,
+     "sta_sec":0.5,"lta_sec":12.0,"java":True},
 
-    # Sumatera — variasi noise
-    {"net":"GE","sta":"LHMI", "cha":"BHZ","lat": 5.23,"lon": 96.95,"label":"Lhokseumawe",
-     "thr_on":8.0,"thr_off":0.7},
-    {"net":"GE","sta":"MNAI", "cha":"BHZ","lat": -4.36,"lon": 102.96,"label":"Bengkulu",
-     "thr_on":7.8,"thr_off":0.6},
-    {"net":"GE","sta":"GSI",  "cha":"BHZ","lat": 1.3,"lon":97.58,"label":"NIAS",
-     "thr_on":7.8,"thr_off":0.7},
+    {"net":"GE","sta":"UGM", "cha":"SHZ","lat":-7.91, "lon":110.52,"label":"WanaGAMA",
+     "thr_on":4.5,"thr_off":0.6,"thr_single":5.5,
+     "sta_sec":0.5,"lta_sec":12.0,"java":True},
 
-    # Sulawesi
-    {"net":"GE","sta":"TOLI2","cha":"BHZ","lat": 1.11,"lon":120.78,"label":"Toli-Toli",
-     "thr_on":7.0,"thr_off":0.7},
-    {"net":"GE","sta":"LUWI", "cha":"BHZ","lat":-1.04,"lon":122.77,"label":"Luwuk",
-     "thr_on":7.8,"thr_off":0.6},
+    # JAGI (Banyuwangi)
+    {"net":"GE","sta":"JAGI","cha":"BHZ","lat":-8.47, "lon":114.15,"label":"Banyuwangi",
+     "thr_on":4.8,"thr_off":0.5,"thr_single":80.0,
+     "sta_sec":0.5,"lta_sec":12.0,"java":True},
 
-    # Nusa Tenggara
-    {"net":"GE","sta":"SOEI", "cha":"BHZ","lat":-9.76,"lon":124.27,"label":"Soe NTT",
-     "thr_on":3.5,"thr_off":0.6},
-    {"net":"GE","sta":"MMRI", "cha":"BHZ","lat":-8.64,"lon":122.24,"label":"Maumere",
-     "thr_on":3.8,"thr_off":0.6},
-    {"net":"GE","sta":"PLAI", "cha":"BHZ","lat":-8.83,"lon":117.78,"label":"Sumbawa",
-     "thr_on":3.5,"thr_off":0.6},
+    # SMRI (Semarang)
+    {"net":"GE","sta":"SMRI","cha":"BHZ","lat":-7.05, "lon":110.44,"label":"Semarang",
+     "thr_on":7.5,"thr_off":0.9,"thr_single":30.0,
+     "sta_sec":0.5,"lta_sec":12.0,"java":True},
 
-    # Maluku & sekitar
-    {"net":"GE","sta":"TNTI", "cha":"BHZ","lat": 0.77,"lon":127.37,"label":"Ternate",
-     "thr_on":7.0,"thr_off":0.7},
-    {"net":"GE","sta":"SANI", "cha":"BHZ","lat":-2.05,"lon": 125.99,"label":"Sanana",
-     "thr_on":7.5,"thr_off":0.6},    
-    {"net":"GE","sta":"SAUI", "cha":"BHZ","lat":-7.98,"lon":131.3,"label":"Tanibar",
-     "thr_on":7.5,"thr_off":0.6},
-    {"net":"GE","sta":"BNDI", "cha":"BHZ","lat":-4.52,"lon":129.9,"label":"BandaNeira",
-     "thr_on":6.5,"thr_off":0.6},
+    #  Sumatera 
+    {"net":"GE","sta":"LHMI","cha":"BHZ","lat": 5.23, "lon":96.95, "label":"Lhokseumawe",
+     "thr_on":8.0,"thr_off":0.7,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"MNAI","cha":"BHZ","lat":-4.36, "lon":102.96,"label":"Bengkulu",
+     "thr_on":7.8,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"GSI", "cha":"BHZ","lat": 1.3,  "lon":97.58, "label":"NIAS",
+     "thr_on":7.8,"thr_off":0.7,"sta_sec":0.5,"lta_sec":12.0},
+
+    # Sulawesi 
+    {"net":"GE","sta":"TOLI2","cha":"BHZ","lat": 1.11, "lon":120.78,"label":"Toli-Toli",
+     "thr_on":7.0,"thr_off":0.7,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"LUWI","cha":"BHZ", "lat":-1.04, "lon":122.77,"label":"Luwuk",
+     "thr_on":7.8,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+
+    # Nusa Tenggara 
+    {"net":"GE","sta":"SOEI","cha":"BHZ","lat":-9.76, "lon":124.27,"label":"Soe NTT",
+     "thr_on":3.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"MMRI","cha":"BHZ","lat":-8.64, "lon":122.24,"label":"Maumere",
+     "thr_on":3.8,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"PLAI","cha":"BHZ","lat":-8.83, "lon":117.78,"label":"Sumbawa",
+     "thr_on":3.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+
+    # Maluku & sekitar 
+    {"net":"GE","sta":"TNTI","cha":"BHZ","lat": 0.77, "lon":127.37,"label":"Ternate",
+     "thr_on":7.0,"thr_off":0.7,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"SANI","cha":"BHZ","lat":-2.05, "lon":125.99,"label":"Sanana",
+     "thr_on":7.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"SAUI","cha":"BHZ","lat":-7.98, "lon":131.3, "label":"Tanibar",
+     "thr_on":7.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+    {"net":"GE","sta":"BNDI","cha":"BHZ","lat":-4.52, "lon":129.9, "label":"BandaNeira",
+     "thr_on":6.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
 
     # Papua
-    {"net":"GE","sta":"FAKI", "cha":"BHZ","lat":-2.92,"lon":132.25,"label":"Fak-Fak",
-     "thr_on":6.5,"thr_off":0.6},
+    {"net":"GE","sta":"FAKI","cha":"BHZ","lat":-2.92, "lon":132.25,"label":"Fak-Fak",
+     "thr_on":6.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
 
+
+    {"net":"AU","sta":"XMI", "cha":"BHZ","lat":-10.497,"lon":105.630,"label":"Christmas Island",
+     "thr_on":4.0,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0,"server":"iris"},
 ]
 
-GEOFON_HOST   = "geofon.gfz-potsdam.de"
-GEOFON_PORT   = 18000
-STA_SEC       = 0.5
-LTA_SEC       = 12.0       
-MIN_STATIONS  = 4
-ASSOC_WINDOW  = 120     
-EARTH_R       = 6371.0
-GRID_POINTS   = 10000
-GRID_RADIUS   = 25.0
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PARAMETER GLOBAL EWS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GEOFON_HOST  = "geofon.gfz-potsdam.de"
+GEOFON_PORT  = 18000
+IRIS_HOST    = "rtserve.iris.washington.edu"
+IRIS_PORT    = 18000
+
+STA_SEC      = 0.5
+LTA_SEC      = 12.0
+MIN_STATIONS = 4         
+ASSOC_WINDOW = 120       
+EARTH_R      = 6371.0
+GRID_POINTS  = 10000
+GRID_RADIUS  = 25.0
 DEPTH_CANDIDATES = [5, 10, 15, 20, 30, 50, 70, 100, 150]
 
-# ── Parameter Event Baru ──
-EVENT_LIFETIME      = 180      # Event aktif 3 menit dari origin time
-ASSOC_TOLERANCE     = 60       # Toleransi asosiasi waktu tiba (detik)
-INITIAL_TRIG_WINDOW = 120      # Window trigger untuk estimasi lokasi awal
+EVENT_LIFETIME      = 180
+ASSOC_TOLERANCE     = 60
+INITIAL_TRIG_WINDOW = 120
 MAX_FINGERPRINTS    = 100
 
-# Pre-warm TauP cache
+#Java Single-Station Mode=
+
+JAVA_STATIONS = {"BBJI", "UGM", "JAGI", "SMRI"}
+
+JAVA_DEFAULT_LOCATIONS = {
+    "BBJI": {"lat": -8.5, "lon": 107.5, "depth_km": 30},  # selatan Jawa Barat
+    "UGM":  {"lat": -9.0, "lon": 110.0, "depth_km": 30},  # selatan Jawa Tengah
+    "JAGI": {"lat": -9.5, "lon": 114.0, "depth_km": 35},  # selatan Jawa Timur
+    "SMRI": {"lat": -9.0, "lon": 110.5, "depth_km": 30},  # selatan Jawa Tengah
+}
+
+SINGLE_STA_MIN_DURATION_SEC = 10.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAUP CACHE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 print("Pre-computing TauP cache...")
 _TAUP_CACHE = {}
+
 def get_taup_time(dist_deg, depth_km):
-    dk = round(dist_deg, 1)
-    zk = int(min(depth_km, 700))
+    dk  = round(dist_deg, 1)
+    zk  = int(min(depth_km, 700))
     key = (dk, zk)
     if key in _TAUP_CACHE:
         return _TAUP_CACHE[key]
     try:
-        arr = TAUP_MODEL.get_travel_times(zk, dk, ["P","p"])
-        t = arr[0].time if arr else dk * 111.19 / 7.0
+        arr = TAUP_MODEL.get_travel_times(zk, dk, ["P", "p"])
+        t   = arr[0].time if arr else dk * 111.19 / 7.0
     except Exception:
         t = dk * 111.19 / 7.0
     _TAUP_CACHE[key] = t
@@ -101,7 +156,11 @@ for _d in np.arange(0.5, 25.0, 0.5):
         get_taup_time(float(_d), float(_z))
 print(f"TauP cache: {len(_TAUP_CACHE)} entries")
 
-# ── Kabupaten DB 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KABUPATEN DATABASE (sama persis dengan V3)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 KABUPATEN_DB = [
     ("Banda Aceh",5.548,95.323,"Aceh"),("Sabang",5.893,95.329,"Aceh"),
     ("Langsa",4.469,97.967,"Aceh"),("Lhokseumawe",5.180,97.150,"Aceh"),
@@ -193,6 +252,28 @@ KABUPATEN_DB = [
 ]
 _KAB_ARR = np.array([(k[1], k[2]) for k in KABUPATEN_DB])
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GEO HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def haversine_deg(la1, lo1, la2, lo2):
+    r = math.pi / 180
+    dla = (la2-la1)*r; dlo = (lo2-lo1)*r
+    a = math.sin(dla/2)**2 + math.cos(la1*r)*math.cos(la2*r)*math.sin(dlo/2)**2
+    return 2*math.degrees(math.asin(math.sqrt(max(0, min(1, a)))))
+
+def dist_km(la1, lo1, la2, lo2):
+    return haversine_deg(la1, lo1, la2, lo2) * 111.19
+
+def bearing_str(la1, lo1, la2, lo2):
+    r = math.pi/180; dlo = (lo2-lo1)*r
+    y = math.sin(dlo)*math.cos(la2*r)
+    x = math.cos(la1*r)*math.sin(la2*r) - math.sin(la1*r)*math.cos(la2*r)*math.cos(dlo)
+    d = (math.degrees(math.atan2(y, x)) + 360) % 360
+    return ["Utara","Timur Laut","Timur","Tenggara",
+            "Selatan","Barat Daya","Barat","Barat Laut"][int((d+22.5)/45)%8]
+
 def nearest_kabupaten(lat, lon):
     dlat = _KAB_ARR[:,0] - lat
     dlon = (_KAB_ARR[:,1] - lon) * math.cos(math.radians(lat))
@@ -202,25 +283,9 @@ def nearest_kabupaten(lat, lon):
     dr   = bearing_str(lat, lon, k[1], k[2])
     return k[0], k[3], round(km, 1), dr
 
-# ── Geo helpers
-def haversine_deg(la1,lo1,la2,lo2):
-    r=math.pi/180; dla=(la2-la1)*r; dlo=(lo2-lo1)*r
-    a=math.sin(dla/2)**2+math.cos(la1*r)*math.cos(la2*r)*math.sin(dlo/2)**2
-    return 2*math.degrees(math.asin(math.sqrt(max(0,min(1,a)))))
-
-def dist_km(la1,lo1,la2,lo2):
-    return haversine_deg(la1,lo1,la2,lo2)*111.19
-
-def bearing_str(la1,lo1,la2,lo2):
-    r=math.pi/180; dlo=(lo2-lo1)*r
-    y=math.sin(dlo)*math.cos(la2*r)
-    x=math.cos(la1*r)*math.sin(la2*r)-math.sin(la1*r)*math.cos(la2*r)*math.cos(dlo)
-    d=(math.degrees(math.atan2(y,x))+360)%360
-    return ["Utara","Timur Laut","Timur","Tenggara","Selatan","Barat Daya","Barat","Barat Laut"][int((d+22.5)/45)%8]
-
 PHI2 = 2.618033989
 
-def move_on_globe(lat_r,lon_r,ang,dist_r):
+def move_on_globe(lat_r, lon_r, ang, dist_r):
     cl=math.cos(lat_r); sl=math.sin(lat_r)
     clo=math.cos(lon_r); slo=math.sin(lon_r)
     cd=math.cos(dist_r); sd=math.sin(dist_r)
@@ -228,184 +293,343 @@ def move_on_globe(lat_r,lon_r,ang,dist_r):
     x=cd*cl*clo-sd*(sl*clo*cg+slo*sg)
     y=cd*cl*slo-sd*(sl*slo*cg-clo*sg)
     z=sd*cl*cg+cd*sl
-    z=max(-1.0,min(1.0,z))
-    return math.asin(z), math.atan2(y,x)
+    z=max(-1.0, min(1.0, z))
+    return math.asin(z), math.atan2(y, x)
 
 def azimuth_gap(triggers, epicenter):
-    """
-    Hitung gap maksimum antar stasiun dalam lingkaran azimuth.
-    Gap > 180° = stasiun tidak melingkupi episenter = lokasi tidak reliable.
-    Standar USGS: gap < 180° untuk laporan resmi.
-    """
     azimuths = []
     for tr in triggers:
         dlon = math.radians(tr["lon"] - epicenter["lon"])
-        y = math.sin(dlon) * math.cos(math.radians(tr["lat"]))
-        x = (math.cos(math.radians(epicenter["lat"])) * math.sin(math.radians(tr["lat"])) -
-             math.sin(math.radians(epicenter["lat"])) * math.cos(math.radians(tr["lat"])) * math.cos(dlon))
+        y = math.sin(dlon)*math.cos(math.radians(tr["lat"]))
+        x = (math.cos(math.radians(epicenter["lat"]))*math.sin(math.radians(tr["lat"])) -
+             math.sin(math.radians(epicenter["lat"]))*math.cos(math.radians(tr["lat"]))*math.cos(dlon))
         az = (math.degrees(math.atan2(y, x)) + 360) % 360
         azimuths.append(az)
-
     azimuths.sort()
-    gaps = [azimuths[i+1] - azimuths[i] for i in range(len(azimuths)-1)]
-    gaps.append(360 - azimuths[-1] + azimuths[0])  # wrap-around gap
+    gaps = [azimuths[i+1]-azimuths[i] for i in range(len(azimuths)-1)]
+    gaps.append(360 - azimuths[-1] + azimuths[0])
     return max(gaps)
 
 def is_likely_teleseismic(triggers, epicenter):
-    """
-    Gempa lokal: gelombang tiba dari stasiun terdekat dalam waktu singkat.
-    Teleseismik: semua stasiun menerima hampir bersamaan (karena gelombang sudah
-    hampir horizontal saat tiba dari jauh).
-
-    Jika selisih waktu tiba antar stasiun < 10 detik padahal jarak antar
-    stasiun > 500 km → kemungkinan teleseismik.
-    """
     if len(triggers) < 3:
         return False
-
-    # Stasiun terdekat dan terjauh dari episenter
-    dists = [dist_km(epicenter["lat"], epicenter["lon"], t["lat"], t["lon"]) 
-             for t in triggers]
-    min_dist = min(dists)
-    max_dist = max(dists)
-
-    # Jika stasiun terdekat > 300 km dari episenter yang diestimasi
-    # kemungkinan besar false location
+    dists = [dist_km(epicenter["lat"], epicenter["lon"], t["lat"], t["lon"]) for t in triggers]
+    min_dist = min(dists); max_dist = max(dists)
     if min_dist > 300:
         print(f"[FILTER] Stasiun terdekat {min_dist:.0f} km — kemungkinan teleseismik")
         return True
-
-    # Cek spread waktu tiba
     t_arrive = sorted([t["t_arrive"] for t in triggers])
-    time_spread = t_arrive[-1] - t_arrive[0]  # detik
-    sta_dist_spread = max_dist - min_dist  # km
-
-    # Kalau spread waktu < 15 detik tapi jarak antar stasiun > 800 km
-    # → gelombang datang hampir horizontal = teleseismik
+    time_spread = t_arrive[-1] - t_arrive[0]
+    sta_dist_spread = max_dist - min_dist
     if time_spread < 15 and sta_dist_spread > 800:
         print(f"[FILTER] Time spread {time_spread:.1f}s, sta spread {sta_dist_spread:.0f}km — teleseismik")
         return True
-
     return False
 
-# State 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 sta_cfg = {s["sta"]: s for s in STATIONS}
 
 sta_buffers = {s["sta"]: {
-    "data"        : collections.deque(maxlen=30000),
-    "sr"          : 20.0,
-    "triggered"   : False,
-    "trigger_time": None,
-    "peak_amp"    : 0.0,
-    "reset_at"    : None,
+    "data":          collections.deque(maxlen=30000),
+    "sr":            20.0,
+    "triggered":     False,
+    "trigger_time":  None,
+    "peak_amp":      0.0,
+    "peak_cft":      0.0,   
+    "trigger_start": None,   
+    "reset_at":      None,
 } for s in STATIONS}
 
 lock          = threading.Lock()
-active_events = {}   # key → event dict
+active_events = {}
 event_lock    = threading.Lock()
 connected_ws  = set()
 
-# State tambahan untuk event tracking
 _processed_fingerprints = collections.deque(maxlen=MAX_FINGERPRINTS)
 
-# Grid search 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GRID SEARCH & MAGNITUDE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def _residual(triggers, lat_r, lon_r, depth_km):
-    la=math.degrees(lat_r); lo=math.degrees(lon_r)
-    ots=[]
+    la = math.degrees(lat_r); lo = math.degrees(lon_r)
+    ots = []
     for tr in triggers:
-        d=haversine_deg(la,lo,tr["lat"],tr["lon"])
-        tt=get_taup_time(d,depth_km)
-        ots.append(tr["t_arrive"]-tt)
-    ot=float(np.median(ots))
-    sq=sum((ot+get_taup_time(haversine_deg(la,lo,tr["lat"],tr["lon"]),depth_km)-tr["t_arrive"])**2
-           for tr in triggers)
+        d  = haversine_deg(la, lo, tr["lat"], tr["lon"])
+        tt = get_taup_time(d, depth_km)
+        ots.append(tr["t_arrive"] - tt)
+    ot = float(np.median(ots))
+    sq = sum(
+        (ot + get_taup_time(haversine_deg(la, lo, tr["lat"], tr["lon"]), depth_km) - tr["t_arrive"])**2
+        for tr in triggers
+    )
     return sq, ot
 
+
 def spiral_search(triggers):
-    if len(triggers) < MIN_STATIONS:
+    if len(triggers) < 1:
         return None
 
-    r=math.pi/180
-    la0=np.mean([t["lat"] for t in triggers])*r
-    lo0=np.mean([t["lon"] for t in triggers])*r
-    max_r=math.radians(GRID_RADIUS)
+    r    = math.pi / 180
+    la0  = np.mean([t["lat"] for t in triggers]) * r
+    lo0  = np.mean([t["lon"] for t in triggers]) * r
+    max_r = math.radians(GRID_RADIUS)
 
-    best_err=float("inf"); best=(None,None,None,None)
+    best_err = float("inf"); best = (None, None, None, None)
 
-    # Pass 1 
     for i in range(GRID_POINTS):
         ang = 2*math.pi*i/PHI2
         d   = math.sqrt(i)*(max_r/math.sqrt(GRID_POINTS-1))
-        la,lo = move_on_globe(la0,lo0,ang,d)
+        la, lo = move_on_globe(la0, lo0, ang, d)
         for z in DEPTH_CANDIDATES:
-            err,ot = _residual(triggers,la,lo,z)
+            err, ot = _residual(triggers, la, lo, z)
             if err < best_err:
-                best_err=err; best=(la,lo,z,ot)
+                best_err = err; best = (la, lo, z, ot)
 
     if best[0] is None:
         return None
 
-    # Pass 2 
     fine_r = math.radians(3.0)
     for i in range(3000):
         ang = 2*math.pi*i/PHI2
         d   = math.sqrt(i)*(fine_r/math.sqrt(2999))
-        la,lo = move_on_globe(best[0],best[1],ang,d)
-        for z in [max(1,best[2]-15), max(1,best[2]-5), best[2],
-                  best[2]+5, best[2]+15]:
-            err,ot = _residual(triggers,la,lo,z)
+        la, lo = move_on_globe(best[0], best[1], ang, d)
+        for z in [max(1, best[2]-15), max(1, best[2]-5), best[2], best[2]+5, best[2]+15]:
+            err, ot = _residual(triggers, la, lo, z)
             if err < best_err:
-                best_err=err; best=(la,lo,z,ot)
+                best_err = err; best = (la, lo, z, ot)
 
-    elat=math.degrees(best[0]); elon=math.degrees(best[1])
-    rms=math.sqrt(best_err/len(triggers))
+    elat = math.degrees(best[0]); elon = math.degrees(best[1])
+    rms  = math.sqrt(best_err / len(triggers))
 
-    return {"lat":round(elat,3),"lon":round(elon,3),
-            "depth_km":round(float(best[2]),1),"origin_t":float(best[3]),
-            "rms_sec":round(rms,2),"conf_km":round(rms*8,1),
-            "n_sta":len(triggers)}
+    return {"lat": round(elat, 3), "lon": round(elon, 3),
+            "depth_km": round(float(best[2]), 1), "origin_t": float(best[3]),
+            "rms_sec": round(rms, 2), "conf_km": round(rms*8, 1),
+            "n_sta": len(triggers)}
+
 
 def estimate_mag(triggers, epi):
-    mls=[]
+    mls = []
     for tr in triggers:
-        if tr["peak_amp"]<=0: continue
-        d=dist_km(epi["lat"],epi["lon"],tr["lat"],tr["lon"])
-        d=max(d,1.0); delta=d/111.19
-        ml=math.log10(tr["peak_amp"])+3*math.log10(8.0*delta)-2.92
+        if tr["peak_amp"] <= 0:
+            continue
+        d  = dist_km(epi["lat"], epi["lon"], tr["lat"], tr["lon"])
+        d  = max(d, 1.0); delta = d / 111.19
+        ml = math.log10(tr["peak_amp"]) + 3*math.log10(8.0*delta) - 2.92
         mls.append(ml)
-    return round(float(np.median(mls)),1) if mls else None
+    return round(float(np.median(mls)), 1) if mls else None
 
-def mmi_info(mag,depth):
-    if mag is None: return "I","Tidak terasa"
-    v=max(1,min(10,round(1.5*mag-0.5*math.log10(max(depth,1))-1.0)))
-    tbl={1:("I","Tidak terasa"),2:("II","Sangat lemah"),3:("III","Lemah"),
-         4:("IV","Cukup terasa"),5:("V","Kuat"),6:("VI","Sangat kuat"),
-         7:("VII","Kerusakan ringan"),8:("VIII","Kerusakan sedang"),
-         9:("IX","Kerusakan berat"),10:("X","Kerusakan sangat berat")}
-    return tbl.get(v,("I","Tidak terasa"))
 
-def alert_level(mag,n_sta):
-    if mag is None or mag<2.5 or n_sta<MIN_STATIONS: return 0
-    if mag>=6.5 and n_sta>=4: return 4
-    if mag>=5.0 and n_sta>=4: return 3
-    if mag>=4.0 and n_sta>=3: return 2
-    if mag>=3.0 and n_sta>=3: return 1
+def mmi_info(mag, depth):
+    if mag is None:
+        return "I", "Tidak terasa"
+    v = max(1, min(10, round(1.5*mag - 0.5*math.log10(max(depth, 1)) - 1.0)))
+    tbl = {1:("I","Tidak terasa"),2:("II","Sangat lemah"),3:("III","Lemah"),
+           4:("IV","Cukup terasa"),5:("V","Kuat"),6:("VI","Sangat kuat"),
+           7:("VII","Kerusakan ringan"),8:("VIII","Kerusakan sedang"),
+           9:("IX","Kerusakan berat"),10:("X","Kerusakan sangat berat")}
+    return tbl.get(v, ("I", "Tidak terasa"))
+
+
+def alert_level(mag, n_sta, single_station=False):
+    """
+    Alert level dengan aturan single-station:
+    Event dari 1 stasiun dikunci di level 1 (Deteksi Awal)
+    sampai dikonfirmasi stasiun lain.
+    """
+    if mag is None or mag < 2.5 or n_sta < 1:
+        return 0
+    if single_station:
+        # Single-station
+        return 1
+    if mag >= 6.5 and n_sta >= 4: return 4
+    if mag >= 5.0 and n_sta >= 4: return 3
+    if mag >= 4.0 and n_sta >= 3: return 2
+    if mag >= 3.0 and n_sta >= 3: return 1
     return 0
 
-def potential(mag,depth):
-    if mag is None: return "Dalam analisis"
-    if mag>=7.0 and depth<=70: return "Berpotensi tsunami"
-    if mag>=6.5: return "Berpotensi merusak"
-    if mag>=5.0: return "Dapat dirasakan luas"
-    if mag>=4.0: return "Dapat dirasakan lokal"
+
+def potential(mag, depth):
+    if mag is None:
+        return "Dalam analisis"
+    if mag >= 7.0 and depth <= 70:  return "Berpotensi tsunami"
+    if mag >= 6.5:                   return "Berpotensi merusak"
+    if mag >= 5.0:                   return "Dapat dirasakan luas"
+    if mag >= 4.0:                   return "Dapat dirasakan lokal"
     return "Umumnya tidak dirasakan"
 
-# ── FUNGSI HELPER BARU UNTUK EVENT MANAGEMENT ──
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SINGLE-STATION MODE UNTUK JAWA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def check_java_single_station():
+    """
+    Cek apakah ada stasiun Jawa yang memenuhi kriteria single-station trigger.
+
+    Kriteria (SEMUA harus terpenuhi):
+    1. Hanya stasiun Jawa (BBJI/UGM/JAGI/SMRI)
+    2. peak_cft >= thr_single stasiun tersebut
+    3. Durasi trigger >= SINGLE_STA_MIN_DURATION_SEC (anti-noise-burst)
+    4. TIDAK ada stasiun Jawa lain yang juga trigger
+       (jika ada 2+ stasiun, gunakan mode normal saja)
+    5. Tidak ada event aktif yang sudah mencakup stasiun ini
+
+    Return: dict trigger atau None
+    """
+    now = time.time()
+    java_triggered = []
+
+    with lock:
+        for sta in JAVA_STATIONS:
+            buf = sta_buffers.get(sta)
+            if buf is None:
+                continue
+            if not buf["triggered"] or buf["trigger_time"] is None:
+                continue
+            # Cek apakah sudah dalam ASSOC_WINDOW
+            if now - buf["trigger_time"] > ASSOC_WINDOW:
+                continue
+
+            cfg        = sta_cfg.get(sta, {})
+            thr_single = cfg.get("thr_single", 999.0)
+            peak_cft   = buf["peak_cft"]
+
+            if peak_cft < thr_single:
+                continue  
+
+            # Cek durasi
+            t_start = buf.get("trigger_start", buf["trigger_time"])
+            duration = now - t_start
+            if duration < SINGLE_STA_MIN_DURATION_SEC:
+                continue 
+
+            java_triggered.append({
+                "sta":       sta,
+                "lat":       cfg["lat"],
+                "lon":       cfg["lon"],
+                "label":     cfg["label"],
+                "t_arrive":  buf["trigger_time"],
+                "peak_amp":  buf["peak_amp"],
+                "peak_cft":  peak_cft,
+                "duration":  duration,
+            })
+
+   
+    if len(java_triggered) != 1:
+        return None
+
+    tr = java_triggered[0]
+
+    with event_lock:
+        for ev in active_events.values():
+            if isinstance(ev, dict) and tr["sta"] in ev.get("stations", []):
+                return None  
+
+    print(f"[JAVA-1STA] {tr['sta']} peak_cft={tr['peak_cft']:.1f} duration={tr['duration']:.0f}s → trigger single-station")
+    return tr
+
+
+def finalize_single_station_event(trigger):
+    """
+     event dari 1 stasiun Jawa.
+  
+    """
+    sta       = trigger["sta"]
+    default   = JAVA_DEFAULT_LOCATIONS[sta]
+    epi_lat   = default["lat"]
+    epi_lon   = default["lon"]
+    depth_km  = default["depth_km"]
+
+
+    d_deg  = haversine_deg(epi_lat, epi_lon, trigger["lat"], trigger["lon"])
+    tt     = get_taup_time(d_deg, depth_km)
+    origin = trigger["t_arrive"] - tt
+
+    # Magnitude dari amplitudo
+    d   = dist_km(epi_lat, epi_lon, trigger["lat"], trigger["lon"])
+    d   = max(d, 1.0)
+    mag = None
+    if trigger["peak_amp"] > 0:
+        delta = d / 111.19
+        ml    = math.log10(trigger["peak_amp"]) + 3*math.log10(8.0*delta) - 2.92
+        mag   = round(float(ml), 1)
+
+  
+    if mag is not None and mag < 4.0:
+        print(f"[JAVA-1STA] Magnitude estimasi M{mag} < M4.0, abaikan")
+        return None
+
+    mmi, mmi_d = mmi_info(mag, depth_km)
+    lvl        = alert_level(mag, 1, single_station=True) 
+    kab, prov, kd, kdir = nearest_kabupaten(epi_lat, epi_lon)
+    pot        = potential(mag, depth_km)
+
+    lat_s = f"{abs(epi_lat):.2f}°{'LS' if epi_lat<0 else 'LU'}"
+    lon_s = f"{abs(epi_lon):.2f}°{'BT' if epi_lon>0 else 'BB'}"
+    wilayah = f"{kd:.0f} km {kdir} {kab}, {prov}"
+
+    ev_id = f"java1_{sta}_{int(origin/30)}"
+
+    with event_lock:
+        if ev_id in active_events:
+            return None
+
+    ev = {
+        "id":            ev_id,
+        "lat":           epi_lat,
+        "lon":           epi_lon,
+        "lat_str":       lat_s,
+        "lon_str":       lon_s,
+        "depth_km":      depth_km,
+        "magnitude":     mag,
+        "mmi":           mmi,
+        "mmi_desc":      mmi_d,
+        "wilayah":       wilayah,
+        "kabupaten":     kab,
+        "provinsi":      prov,
+        "kab_dist_km":   kd,
+        "kab_dir":       kdir,
+        "potential":     pot,
+        "alert_level":   lvl,
+        "alert_label":   "Deteksi Awal (Konfirmasi Pending)",
+        "n_stations":    1,
+        "stations":      [sta],
+        "rms_sec":       None,
+        "conf_km":       None,
+        "origin_time":   origin,
+        "timestamp":     time.time(),
+        "last_update":   time.time(),
+        # Flag single-station
+        "single_station":     True,
+        "single_station_sta": sta,
+     
+        "locked_lat":    epi_lat,
+        "locked_lon":    epi_lon,
+        "locked_depth":  depth_km,
+        "locked_origin": origin,
+ 
+        "note": (f"Terdeteksi oleh 1 stasiun ({trigger['label']}). "
+                 f"Lokasi perkiraan zona subduksi. "
+                 f"Menunggu konfirmasi stasiun lain."),
+    }
+
+    print(f"[JAVA-1STA] Event baru: M{mag} perkiraan {wilayah} | sta={sta} cft={trigger['peak_cft']:.1f}")
+    return ev
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EVENT MANAGEMENT (sama dengan V3 + modifikasi kecil)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_event_triggers(station_list):
-    """Kumpulkan data trigger terkini dari sta_buffers untuk daftar stasiun."""
     trigs = []
-    now = time.time()
+    now   = time.time()
     for sta in station_list:
         if sta not in sta_buffers or sta not in sta_cfg:
             continue
@@ -413,10 +637,10 @@ def build_event_triggers(station_list):
         if buf.get("triggered") and buf.get("trigger_time"):
             if now - buf["trigger_time"] <= ASSOC_WINDOW:
                 trigs.append({
-                    "sta": sta,
-                    "lat": sta_cfg[sta]["lat"],
-                    "lon": sta_cfg[sta]["lon"],
-                    "label": sta_cfg[sta]["label"],
+                    "sta":      sta,
+                    "lat":      sta_cfg[sta]["lat"],
+                    "lon":      sta_cfg[sta]["lon"],
+                    "label":    sta_cfg[sta]["label"],
                     "t_arrive": buf["trigger_time"],
                     "peak_amp": buf["peak_amp"],
                 })
@@ -424,10 +648,6 @@ def build_event_triggers(station_list):
 
 
 def find_event_by_arrival(trigger):
-    """
-    Cari event existing yang trigger ini kemungkinan berasal dari situ.
-    Menggunakan expected arrival time = origin_time + travel_time.
-    """
     now = time.time()
     with event_lock:
         for ev_id, ev in active_events.items():
@@ -435,17 +655,11 @@ def find_event_by_arrival(trigger):
                 continue
             if now - ev.get("origin_time", 0) > EVENT_LIFETIME:
                 continue
-            # Stasiun sudah terdaftar di event ini?
             if trigger["sta"] in ev.get("stations", []):
                 return ev_id
-
-            # Hitung waktu tiba yang diharapkan dari event ini ke stasiun trigger
-            d = dist_km(ev["lat"], ev["lon"], trigger["lat"], trigger["lon"])
-            dist_deg = d / 111.19
-            tt = get_taup_time(dist_deg, ev["depth_km"])
-            expected = ev["origin_time"] + tt
-
-            if abs(trigger["t_arrive"] - expected) < ASSOC_TOLERANCE:
+            d  = dist_km(ev["lat"], ev["lon"], trigger["lat"], trigger["lon"])
+            tt = get_taup_time(d/111.19, ev["depth_km"])
+            if abs(trigger["t_arrive"] - (ev["origin_time"] + tt)) < ASSOC_TOLERANCE:
                 return ev_id
     return None
 
@@ -453,7 +667,9 @@ def find_event_by_arrival(trigger):
 def merge_to_event(ev_id, new_triggers):
     """
     Masukkan trigger baru ke event existing.
-    Hanya UPDATE MAGNITUDE. LOKASI & DEPTH TIDAK DIUBAH.
+    Jika event tadinya single-station dan sekarang dapat konfirmasi:
+    - Hapus flag single_station
+    - Upgrade alert_level sesuai magnitude baru
     """
     with event_lock:
         ev = active_events.get(ev_id)
@@ -469,34 +685,47 @@ def merge_to_event(ev_id, new_triggers):
         if not added:
             return ev
 
-        # Bangun ulang trigger list dari buffer terkini
         all_trigs = build_event_triggers(ev["stations"])
-
-        # Gunakan parameter LOCKED untuk hitung magnitude
         loc = {
-            "lat": ev.get("locked_lat", ev["lat"]),
-            "lon": ev.get("locked_lon", ev["lon"]),
+            "lat":      ev.get("locked_lat", ev["lat"]),
+            "lon":      ev.get("locked_lon", ev["lon"]),
             "depth_km": ev.get("locked_depth", ev["depth_km"]),
         }
 
         new_mag = estimate_mag(all_trigs, loc)
+        n_sta   = len(ev["stations"])
+
         if new_mag:
-            ev["magnitude"] = round(new_mag, 1)
+            ev["magnitude"]  = round(new_mag, 1)
             ev["mmi"], ev["mmi_desc"] = mmi_info(ev["magnitude"], loc["depth_km"])
-            ev["alert_level"] = alert_level(ev["magnitude"], len(ev["stations"]))
-            ev["alert_label"] = ["Deteksi Awal","Konfirmasi","Gempa Sedang","Gempa Kuat","Gempa Sangat Kuat"][ev["alert_level"]]
-            ev["potential"] = potential(ev["magnitude"], loc["depth_km"])
-            ev["n_stations"] = len(ev["stations"])
+            ev["potential"]  = potential(ev["magnitude"], loc["depth_km"])
+            ev["n_stations"] = n_sta
+
+            # Upgrade dari single-station jika sekarang ada 2+ stasiun
+            was_single = ev.get("single_station", False)
+            if was_single and n_sta >= 2:
+                ev["single_station"] = False
+                ev["alert_label"]    = ["Deteksi Awal","Konfirmasi","Gempa Sedang",
+                                         "Gempa Kuat","Gempa Sangat Kuat"][
+                                         alert_level(ev["magnitude"], n_sta)]
+                ev["alert_level"]    = alert_level(ev["magnitude"], n_sta)
+                ev["note"]           = f"Dikonfirmasi oleh {n_sta} stasiun."
+                print(f"[EWS] Single-station {ev_id} UPGRADE → M{ev['magnitude']} {n_sta} stasiun")
+            else:
+                ev["alert_level"] = alert_level(
+                    ev["magnitude"], n_sta, single_station=ev.get("single_station", False))
+                ev["alert_label"] = (
+                    "Deteksi Awal (Konfirmasi Pending)" if ev.get("single_station") else
+                    ["Deteksi Awal","Konfirmasi","Gempa Sedang",
+                     "Gempa Kuat","Gempa Sangat Kuat"][ev["alert_level"]]
+                )
 
         ev["last_update"] = time.time()
         return ev
 
 
 def finalize_new_event(triggers):
-    """
-    Buat event BARU dari trigger awal.
-    Langsung LOCK lat, lon, depth, origin_time agar tidak berubah saat stasiun baru datang.
-    """
+    """Buat event baru dari trigger multi-stasiun (normal mode)."""
     if len(triggers) < MIN_STATIONS:
         return None
 
@@ -518,146 +747,251 @@ def finalize_new_event(triggers):
         print("[EWS] Ditolak: kemungkinan teleseismik")
         return None
 
-    # Constraint heuristic: gempa lokal biasanya dangkal
     min_dist_to_sta = min(dist_km(epi["lat"], epi["lon"], t["lat"], t["lon"]) for t in triggers)
     if min_dist_to_sta < 150 and epi["depth_km"] > 50:
-        print(f"[EWS] Force shallow depth: {epi['depth_km']} -> 15 km (stasiun dekat {min_dist_to_sta:.0f} km)")
+        print(f"[EWS] Force shallow depth: {epi['depth_km']} → 15 km")
         epi["depth_km"] = 15.0
 
-    mag = estimate_mag(triggers, epi)
+    mag        = estimate_mag(triggers, epi)
     mmi, mmi_d = mmi_info(mag, epi["depth_km"])
-    lvl = alert_level(mag if mag else 0, epi["n_sta"])
+    lvl        = alert_level(mag if mag else 0, epi["n_sta"])
     kab, prov, kd, kdir = nearest_kabupaten(epi["lat"], epi["lon"])
-    pot = potential(mag, epi["depth_km"])
+    pot        = potential(mag, epi["depth_km"])
 
-    lat_s = f"{abs(epi['lat']):.2f}°{'LS' if epi['lat']<0 else 'LU'}"
-    lon_s = f"{abs(epi['lon']):.2f}°{'BT' if epi['lon']>0 else 'BB'}"
+    lat_s   = f"{abs(epi['lat']):.2f}°{'LS' if epi['lat']<0 else 'LU'}"
+    lon_s   = f"{abs(epi['lon']):.2f}°{'BT' if epi['lon']>0 else 'BB'}"
     wilayah = f"{kd:.0f} km {kdir} {kab}, {prov}"
 
-    # ID unik berbasis ORIGIN TIME (30 detik resolution).
-    # Gempa yang sama akan selalu punya ID identik meski stasiun pencatat berbeda.
     ev_id = str(int(round(epi["origin_t"] / 30)))
 
-    # Kalau event ini sudah ada, biarkan caller yang handle merge
     with event_lock:
-        existing = active_events.get(ev_id)
-        if isinstance(existing, dict):
+        if isinstance(active_events.get(ev_id), dict):
             print(f"[EWS] Event {ev_id} sudah ada, akan di-merge")
             return None
 
     ev = {
-        "id": ev_id,
-        "lat": epi["lat"], "lon": epi["lon"],
-        "lat_str": lat_s, "lon_str": lon_s,
-        "depth_km": epi["depth_km"],
-        "magnitude": mag,
-        "mmi": mmi, "mmi_desc": mmi_d,
-        "wilayah": wilayah, "kabupaten": kab, "provinsi": prov,
-        "kab_dist_km": kd, "kab_dir": kdir,
-        "potential": pot, "alert_level": lvl,
-        "alert_label": ["Deteksi Awal","Konfirmasi","Gempa Sedang","Gempa Kuat","Gempa Sangat Kuat"][lvl],
-        "n_stations": epi["n_sta"],
-        "stations": [t["sta"] for t in triggers],
-        "rms_sec": epi["rms_sec"], "conf_km": epi["conf_km"],
-        "origin_time": epi["origin_t"], "timestamp": time.time(),
-        "last_update": time.time(),
-        # ── LOCK PARAMETER INTI ──
-        # Nilai ini TIDAK AKAN BERUBAH meski stasiun baru terus trigger
-        "locked_lat": epi["lat"],
-        "locked_lon": epi["lon"],
+        "id":           ev_id,
+        "lat":          epi["lat"],
+        "lon":          epi["lon"],
+        "lat_str":      lat_s,
+        "lon_str":      lon_s,
+        "depth_km":     epi["depth_km"],
+        "magnitude":    mag,
+        "mmi":          mmi,
+        "mmi_desc":     mmi_d,
+        "wilayah":      wilayah,
+        "kabupaten":    kab,
+        "provinsi":     prov,
+        "kab_dist_km":  kd,
+        "kab_dir":      kdir,
+        "potential":    pot,
+        "alert_level":  lvl,
+        "alert_label":  ["Deteksi Awal","Konfirmasi","Gempa Sedang",
+                          "Gempa Kuat","Gempa Sangat Kuat"][lvl],
+        "n_stations":   epi["n_sta"],
+        "stations":     [t["sta"] for t in triggers],
+        "rms_sec":      epi["rms_sec"],
+        "conf_km":      epi["conf_km"],
+        "origin_time":  epi["origin_t"],
+        "timestamp":    time.time(),
+        "last_update":  time.time(),
+        "single_station": False,
+        "locked_lat":   epi["lat"],
+        "locked_lon":   epi["lon"],
         "locked_depth": epi["depth_km"],
-        "locked_origin": epi["origin_t"],
+        "locked_origin":epi["origin_t"],
     }
 
     print(f"[EWS] LOCKED M{mag} {wilayah} | depth={epi['depth_km']}km MMI={mmi} lvl={lvl}")
     return ev
 
 
-# SeedLink 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEEDLINK CLIENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class EWSClient(EasySeedLinkClient):
+
     def on_data(self, trace):
-        sta=trace.stats.station
-        if sta not in sta_buffers: return
-        cfg=sta_cfg.get(sta,{})
+        sta = trace.stats.station
+        if sta not in sta_buffers:
+            return
+
+        cfg = sta_cfg.get(sta, {})
+
         with lock:
-            buf=sta_buffers[sta]
-            sr=float(trace.stats.sampling_rate)
-            buf["sr"]=sr
-            new_maxlen=int(sr*300)
-            if buf["data"].maxlen!=new_maxlen:
-                buf["data"]=collections.deque(buf["data"],maxlen=new_maxlen)
+            buf = sta_buffers[sta]
+            sr  = float(trace.stats.sampling_rate)
+            buf["sr"] = sr
+
+            new_maxlen = int(sr * 300)
+            if buf["data"].maxlen != new_maxlen:
+                buf["data"] = collections.deque(buf["data"], maxlen=new_maxlen)
             for v in trace.data:
                 buf["data"].append(float(v))
 
-            arr=np.array(buf["data"])
-            sri=int(sr)
-            if len(arr)<sri*15: return
+            arr = np.array(buf["data"])
+            sri = int(sr)
+            if len(arr) < sri * 15:
+                return
 
             thr_on  = cfg.get("thr_on", 4.0)
             thr_off = cfg.get("thr_off", 0.7)
+            nsta    = max(1, int(cfg.get("sta_sec", STA_SEC) * sri))
+            nlta    = max(1, int(cfg.get("lta_sec", LTA_SEC) * sri))
 
-            cft=classic_sta_lta(arr,int(STA_SEC*sri),int(LTA_SEC*sri))
-            on_off=trigger_onset(cft,thr_on,thr_off)
+            # ── Hitung STA/LTA ──
+            try:
+                arr_f = arr.astype(np.float64)
+                if _QM_AVAILABLE:
+                    from quakemigrate.core.lib import recursive_sta_lta
+                    cft = recursive_sta_lta(arr_f, nsta, nlta)
+                else:
+                    cft = classic_sta_lta(arr_f, nsta, nlta)
+            except Exception:
+                cft = classic_sta_lta(arr.astype(np.float64), nsta, nlta)
 
-            now=time.time()
-            if len(on_off)>0 and not buf["triggered"]:
-                buf["triggered"]=True
-                buf["trigger_time"]=now
-                buf["peak_amp"]=float(np.abs(arr[-sri*10:]).max())
-                buf["reset_at"]=now+150   # auto reset setelah 2.5 menit
-                print(f"[+] {sta} triggered @ {time.strftime('%H:%M:%S')} amp={buf['peak_amp']:.0f}")
+            on_off = trigger_onset(cft, thr_on, thr_off)
+            now    = time.time()
 
-            # Auto reset
-            if buf["triggered"] and buf["reset_at"] and now>buf["reset_at"]:
-                buf["triggered"]=False; buf["trigger_time"]=None
-                buf["peak_amp"]=0.0;    buf["reset_at"]=None
+          
+            recent_cft = cft[-sri*10:] if len(cft) >= sri*10 else cft
+            buf["peak_cft"] = float(np.max(recent_cft)) if len(recent_cft) > 0 else 0.0
+
+            if len(on_off) > 0 and not buf["triggered"]:
+                buf["triggered"]     = True
+                buf["trigger_time"]  = now
+                buf["trigger_start"] = now   
+                buf["peak_amp"]      = float(np.abs(arr[-sri*10:]).max())
+                buf["reset_at"]      = now + 150
+                print(f"[+] {sta} triggered @ {time.strftime('%H:%M:%S')} "
+                      f"cft={buf['peak_cft']:.1f} amp={buf['peak_amp']:.0f}")
+
+            # Auto reset 
+            if buf["triggered"] and buf["reset_at"] and now > buf["reset_at"]:
+                buf["triggered"]     = False
+                buf["trigger_time"]  = None
+                buf["trigger_start"] = None
+                buf["peak_amp"]      = 0.0
+                buf["reset_at"]      = None
 
     def on_seedlink_error(self):
         print("SeedLink error...")
 
-def run_seedlink():
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEEDLINK THREADS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+STATIONS_GEOFON = [s for s in STATIONS if s.get("server", "geofon") == "geofon"]
+STATIONS_IRIS   = [s for s in STATIONS if s.get("server") == "iris"]
+
+
+def _run_seedlink(host, port, station_list, server_name):
     while True:
         try:
-            c=EWSClient(f"{GEOFON_HOST}:{GEOFON_PORT}")
-            for s in STATIONS:
-                try: c.select_stream(s["net"],s["sta"],s["cha"]); print(f"  sub: {s['sta']}")
-                except Exception as e: print(f"  skip {s['sta']}: {e}")
-            print("SeedLink connected!")
+            c = EWSClient(f"{host}:{port}")
+            for s in station_list:
+                try:
+                    c.select_stream(s["net"], s["sta"], s["cha"])
+                    print(f"  [{server_name}] sub: {s['sta']}")
+                except Exception as e:
+                    print(f"  [{server_name}] skip {s['sta']}: {e}")
+            print(f"[{server_name}] Connected → {host}:{port}")
             c.run()
         except Exception as e:
-            print(f"SeedLink reconnect: {e}"); time.sleep(10)
+            print(f"[{server_name}] Reconnect: {e}")
+            time.sleep(10)
 
-# Trigger processor
+
+threading.Thread(
+    target=lambda: _run_seedlink(GEOFON_HOST, GEOFON_PORT, STATIONS_GEOFON, "GEOFON"),
+    daemon=True
+).start()
+
+threading.Thread(
+    target=lambda: _run_seedlink(IRIS_HOST, IRIS_PORT, STATIONS_IRIS, "IRIS"),
+    daemon=True
+).start()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRIGGER PROCESSOR
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def collect_triggers():
-    now=time.time()
+    now = time.time()
     with lock:
-        trigs=[]
+        trigs = []
         for s in STATIONS:
-            buf=sta_buffers[s["sta"]]
-            if buf["triggered"] and buf["trigger_time"] and (now-buf["trigger_time"])<=ASSOC_WINDOW:
+            buf = sta_buffers[s["sta"]]
+            if buf["triggered"] and buf["trigger_time"] and (now - buf["trigger_time"]) <= ASSOC_WINDOW:
                 trigs.append({
-                    "sta":s["sta"],"lat":s["lat"],"lon":s["lon"],
-                    "label":s["label"],"t_arrive":buf["trigger_time"],
-                    "peak_amp":buf["peak_amp"],
+                    "sta":      s["sta"],
+                    "lat":      s["lat"],
+                    "lon":      s["lon"],
+                    "label":    s["label"],
+                    "t_arrive": buf["trigger_time"],
+                    "peak_amp": buf["peak_amp"],
                 })
     return trigs
 
 
-_processing=False
+_processing = False
+
 
 async def trigger_processor():
     global _processing
+
     while True:
         await asyncio.sleep(3)
 
-        # 1. Kumpulkan trigger aktif
+        # ── 1. trigger aktif ──
         trigs = collect_triggers()
+
+        # ── 2. Java single-station check
+        if not _processing:
+            java_single = check_java_single_station()
+            if java_single is not None:
+                fp = f"java1_{java_single['sta']}_{int(java_single['t_arrive']/30)}"
+                if fp not in _processed_fingerprints:
+                    _processed_fingerprints.append(fp)
+                    _processing = True
+
+                    def run_java_single(tr):
+                        global _processing
+                        try:
+                            ev = finalize_single_station_event(tr)
+                            if ev is None:
+                                return
+                            with event_lock:
+                                active_events[ev["id"]] = ev
+                            if connected_ws:
+                                loop = asyncio.get_event_loop()
+                                msg  = json.dumps({
+                                    "type":    "ews_alert",
+                                    "data":    ev,
+                                    "update":  False,
+                                    "message": (f"⚠ Deteksi Awal: M{ev['magnitude']} "
+                                                f"{ev['wilayah']} — "
+                                                f"terdeteksi 1 stasiun ({tr['label']}), "
+                                                f"menunggu konfirmasi"),
+                                })
+                                for ws in connected_ws.copy():
+                                    try:
+                                        asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
+                                    except Exception:
+                                        pass
+                        finally:
+                            _processing = False
+
+                    threading.Thread(target=run_java_single, args=(java_single,), daemon=True).start()
+
         if len(trigs) < 2:
             continue
 
-        # 2. Asosiasikan tiap trigger ke event existing
-        assoc_map = {}       # ev_id -> [triggers]
+        # ── 3. Asosiasikan trigger ke event existing ──
+        assoc_map    = {}
         unassociated = []
 
         for tr in trigs:
@@ -667,104 +1001,100 @@ async def trigger_processor():
             else:
                 unassociated.append(tr)
 
-        # 3. Update event yang mendapat stasiun baru (hanya magnitude yang update!)
+        # ── 4. Update event existing ──
         for ev_id, trig_list in assoc_map.items():
             ev = merge_to_event(ev_id, trig_list)
-            if ev:
-                if connected_ws:
-                    msg = json.dumps({
-                        "type": "ews_alert",
-                        "data": ev,
-                        "update": True,
-                        "message": f"Update: M{ev['magnitude']} dari {ev['n_stations']} stasiun"
-                    })
-                    dead = set()
-                    for ws in connected_ws.copy():
-                        try:
-                            await ws.send(msg)
-                        except:
-                            dead.add(ws)
-                    connected_ws.difference_update(dead)
-                print(f"[EWS] UPDATE {ev_id}: M{ev['magnitude']} stasiun={ev['n_stations']}")
+            if ev and connected_ws:
+                msg = json.dumps({
+                    "type":    "ews_alert",
+                    "data":    ev,
+                    "update":  True,
+                    "message": (f"Update: M{ev['magnitude']} dari "
+                                f"{ev['n_stations']} stasiun"),
+                })
+                dead = set()
+                for ws in connected_ws.copy():
+                    try:
+                        await ws.send(msg)
+                    except Exception:
+                        dead.add(ws)
+                connected_ws.difference_update(dead)
+                print(f"[EWS] UPDATE {ev_id}: M{ev['magnitude']} sta={ev['n_stations']}")
 
-        # 4. Coba buat event baru dari trigger yang belum terasosiasikan
+        # ── 5. event baru dari trigger yang belum terasosiasikan ──
         if len(unassociated) >= MIN_STATIONS and not _processing:
             unassociated.sort(key=lambda x: x["t_arrive"])
-            first_arrival = unassociated[0]["t_arrive"]
-
-            # Ambil trigger yang tiba dalam window awal untuk estimasi lokasi.
-            # Stasiun yang datang terlambat akan terasosiasi otomatis lewat find_event_by_arrival().
-            initial_trigs = [tr for tr in unassociated
-                           if tr["t_arrive"] <= first_arrival + INITIAL_TRIG_WINDOW]
+            first_arrival  = unassociated[0]["t_arrive"]
+            initial_trigs  = [tr for tr in unassociated
+                              if tr["t_arrive"] <= first_arrival + INITIAL_TRIG_WINDOW]
 
             if len(initial_trigs) < MIN_STATIONS:
-                continue
+                pass
+            else:
+                fp = (f"{int(first_arrival/30)}_"
+                      f"{'_'.join(sorted(t['sta'] for t in initial_trigs))}")
+                if fp not in _processed_fingerprints:
+                    _processed_fingerprints.append(fp)
+                    _processing = True
 
-            # Cek fingerprint agar tidak proses set trigger yang sama berulang kali
-            fp = f"{int(first_arrival/30)}_{'_'.join(sorted(t['sta'] for t in initial_trigs))}"
-            if fp in _processed_fingerprints:
-                continue
-            _processed_fingerprints.append(fp)
+                    def run_finalize():
+                        global _processing
+                        try:
+                            ev = finalize_new_event(initial_trigs)
 
-            _processing = True
+                            if ev is None:
+                               
+                                approx_origin = initial_trigs[0]["t_arrive"] - 25
+                                target_ev     = None
+                                with event_lock:
+                                    for eid, eobj in active_events.items():
+                                        if (isinstance(eobj, dict) and
+                                                abs(eobj.get("origin_time", 0) - approx_origin) < 45):
+                                            target_ev = eid
+                                            break
+                                if target_ev:
+                                    ev = merge_to_event(target_ev, initial_trigs)
+                                    if ev and connected_ws:
+                                        loop = asyncio.get_event_loop()
+                                        msg  = json.dumps({
+                                            "type":    "ews_alert",
+                                            "data":    ev,
+                                            "update":  True,
+                                            "message": (f"Update: M{ev['magnitude']} "
+                                                        f"dari {ev['n_stations']} stasiun"),
+                                        })
+                                        for ws in connected_ws.copy():
+                                            try:
+                                                asyncio.run_coroutine_threadsafe(
+                                                    ws.send(msg), loop)
+                                            except Exception:
+                                                pass
+                                return
 
-            def run_finalize():
-                global _processing
-                try:
-                    ev = finalize_new_event(initial_trigs)
+                            with event_lock:
+                                active_events[ev["id"]] = ev
 
-                    # Jika None karena ID sudah ada, merge ke event existing
-                    if ev is None:
-                        approx_origin = initial_trigs[0]["t_arrive"] - 25
-                        target_ev = None
-                        with event_lock:
-                            for eid, eobj in active_events.items():
-                                if isinstance(eobj, dict) and abs(eobj.get("origin_time",0) - approx_origin) < 45:
-                                    target_ev = eid
-                                    break
-
-                        if target_ev:
-                            ev = merge_to_event(target_ev, initial_trigs)
-                            if ev and connected_ws:
+                            if connected_ws:
                                 loop = asyncio.get_event_loop()
-                                msg = json.dumps({
-                                    "type": "ews_alert",
-                                    "data": ev,
-                                    "update": True,
-                                    "message": f"Update: M{ev['magnitude']} dari {ev['n_stations']} stasiun"
+                                msg  = json.dumps({
+                                    "type":    "ews_alert",
+                                    "data":    ev,
+                                    "update":  False,
+                                    "message": (f"Gempa Baru: M{ev['magnitude']} "
+                                                f"{ev['wilayah']}"),
                                 })
                                 for ws in connected_ws.copy():
                                     try:
-                                        asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
-                                    except:
+                                        asyncio.run_coroutine_threadsafe(
+                                            ws.send(msg), loop)
+                                    except Exception:
                                         pass
-                        return
+                        finally:
+                            _processing = False
 
-                    # Simpan event baru
-                    with event_lock:
-                        active_events[ev["id"]] = ev
+                    threading.Thread(target=run_finalize, daemon=True).start()
 
-                    # Broadcast event baru
-                    if connected_ws:
-                        loop = asyncio.get_event_loop()
-                        msg = json.dumps({
-                            "type": "ews_alert",
-                            "data": ev,
-                            "update": False,
-                            "message": f"Gempa Baru: M{ev['magnitude']} {ev['wilayah']}"
-                        })
-                        for ws in connected_ws.copy():
-                            try:
-                                asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
-                            except:
-                                pass
-
-                finally:
-                    _processing = False
-
-            threading.Thread(target=run_finalize, daemon=True).start()
-
-        # 5. Bersihkan event yang sudah expired (>3 menit dari origin_time)
+        # ── 6. Bersihkan event expired ──
         now = time.time()
         with event_lock:
             expired = [
@@ -775,46 +1105,78 @@ async def trigger_processor():
                 print(f"[EWS] Expire event {k}")
                 del active_events[k]
 
-# WebSocket handler
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEBSOCKET HANDLER
+# ═══════════════════════════════════════════════════════════════════════════════
+
 async def handler(websocket):
     connected_ws.add(websocket)
-    print(f"Client: {websocket.remote_address}")
-    try:
-        with lock:
-            sta_list=[{
-                "sta":s["sta"],"label":s["label"],
-                "lat":s["lat"],"lon":s["lon"],
-                "triggered":sta_buffers[s["sta"]]["triggered"],
-            } for s in STATIONS]
-        await websocket.send(json.dumps({"type":"station_status","data":sta_list}))
+    print(f"[WS] Client: {websocket.remote_address}")
 
+    try:
+       
+        with lock:
+            sta_list = [{
+                "sta":      s["sta"],
+                "label":    s["label"],
+                "lat":      s["lat"],
+                "lon":      s["lon"],
+                "triggered": sta_buffers[s["sta"]]["triggered"],
+                "java":     s.get("java", False),    
+                "thr_single": s.get("thr_single", None), 
+            } for s in STATIONS]
+        await websocket.send(json.dumps({"type": "station_status", "data": sta_list}))
+
+ 
         while True:
             with lock:
-                sta_status=[{
-                    "sta":s["sta"],
-                    "triggered":sta_buffers[s["sta"]]["triggered"],
-                    "amp":round(sta_buffers[s["sta"]]["peak_amp"],1),
+                sta_status = [{
+                    "sta":      s["sta"],
+                    "triggered": sta_buffers[s["sta"]]["triggered"],
+                    "amp":      round(sta_buffers[s["sta"]]["peak_amp"], 1),
+                    "cft":      round(sta_buffers[s["sta"]]["peak_cft"], 1), 
                 } for s in STATIONS]
-            trig_n=sum(1 for s in sta_status if s["triggered"])
+
+            trig_n = sum(1 for s in sta_status if s["triggered"])
+
+            with event_lock:
+                events_snapshot = [ev for ev in active_events.values()
+                                   if isinstance(ev, dict)]
+
             await websocket.send(json.dumps({
-                "type":"heartbeat","stations":sta_status,
-                "triggered":trig_n,"time":time.time(),
+                "type":      "heartbeat",
+                "stations":  sta_status,
+                "triggered": trig_n,
+                "time":      time.time(),
+                "active_events": len(events_snapshot),
             }))
             await asyncio.sleep(5)
+
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
         connected_ws.discard(websocket)
-        print("Client disconnected")
+        print("[WS] Client disconnected")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
 
 async def main():
-    print("Waiting for SeedLink (20s)...")
+    print("[EWS] Waiting for SeedLink (20s)...")
     await asyncio.sleep(20)
-    port=int(os.environ.get("PORT",8766))
-    async with websockets.serve(handler,"0.0.0.0",port):
-        print(f"EWS WebSocket port {port}")
+    port = int(os.environ.get("PORT", 8766))
+    async with websockets.serve(handler, "0.0.0.0", port):
+        print(f"[EWS] WebSocket EWS running on port {port}")
         asyncio.create_task(trigger_processor())
         await asyncio.Future()
 
-threading.Thread(target=run_seedlink,daemon=True).start()
+
+threading.Thread(
+    target=lambda: _run_seedlink(GEOFON_HOST, GEOFON_PORT, STATIONS_GEOFON, "GEOFON"),
+    daemon=True
+).start()
+
 asyncio.run(main())
