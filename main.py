@@ -34,7 +34,7 @@ print("TauP OK")
 STATIONS = [
   
     {"net":"GE","sta":"BBJI","cha":"BHZ","lat":-7.46, "lon":107.65,"label":"Garut",
-     "thr_on":3.2,"thr_off":0.5,"thr_single":100.0,
+     "thr_on":4.2,"thr_off":0.5,"thr_single":100.0,
      "sta_sec":0.5,"lta_sec":12.0,"java":True},
 
     {"net":"GE","sta":"UGM", "cha":"SHZ","lat":-7.91, "lon":110.52,"label":"WanaGAMA",
@@ -43,7 +43,7 @@ STATIONS = [
 
     # JAGI (Banyuwangi)
     {"net":"GE","sta":"JAGI","cha":"BHZ","lat":-8.47, "lon":114.15,"label":"Banyuwangi",
-     "thr_on":4.8,"thr_off":0.5,"thr_single":80.0,
+     "thr_on":5.8,"thr_off":0.5,"thr_single":80.0,
      "sta_sec":0.5,"lta_sec":12.0,"java":True},
 
     # SMRI (Semarang)
@@ -67,11 +67,11 @@ STATIONS = [
 
     # Nusa Tenggara 
     {"net":"GE","sta":"SOEI","cha":"BHZ","lat":-9.76, "lon":124.27,"label":"Soe NTT",
-     "thr_on":3.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+     "thr_on":5.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
     {"net":"GE","sta":"MMRI","cha":"BHZ","lat":-8.64, "lon":122.24,"label":"Maumere",
-     "thr_on":3.8,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+     "thr_on":5.8,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
     {"net":"GE","sta":"PLAI","cha":"BHZ","lat":-8.83, "lon":117.78,"label":"Sumbawa",
-     "thr_on":3.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
+     "thr_on":5.5,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0},
 
     # Maluku & sekitar 
     {"net":"GE","sta":"TNTI","cha":"BHZ","lat": 0.77, "lon":127.37,"label":"Ternate",
@@ -89,7 +89,7 @@ STATIONS = [
 
 
     {"net":"AU","sta":"XMI", "cha":"BHZ","lat":-10.497,"lon":105.630,"label":"Christmas Island",
-     "thr_on":4.0,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0,"server":"iris"},
+     "thr_on":5.0,"thr_off":0.6,"sta_sec":0.5,"lta_sec":12.0,"server":"iris"},
 ]
 
 
